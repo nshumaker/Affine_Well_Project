@@ -11,10 +11,12 @@ import pandas as pd
 import numpy as np
 # Plotting
 import matplotlib.pyplot as plt
+from scipy import ndimage
 #machine learning package
 from sklearn import preprocessing
 from sklearn.utils import shuffle
 from sklearn.ensemble import GradientBoostingRegressor
+
 
 # %%
 #define filepaths
@@ -52,7 +54,7 @@ def shuffle_and_split(df_in, shuffle_bool, test_size, y_col):
     return(df_train_set, df_test_set, X_train, y_train, X_test, y_test)
 # %%
 
-df_train_set, df_test_set, X_train, y_train, X_test, y_test = shuffle_and_split(df_model, False, .2, 'Max_Gas_per_Ft')
+df_train_set, df_test_set, X_train, y_train, X_test, y_test = shuffle_and_split(df_model, False, .05, 'Max_Gas_per_Ft')
 # %%
 dict_params = {'n_estimators':25,'max_depth':5,'max_features':3,'min_samples_split':.1}
 model_gbm = GradientBoostingRegressor(**dict_params,random_state=0)
@@ -160,7 +162,9 @@ dict_kwargs3 = {'trained_model':model_gbm,'X':X_train,'y':y_train,
 def plot_meshgrid(meshgrid_args, plotting_args):
     fig, ax = plt.subplots(nrows=1, ncols=1, constrained_layout=True)
     xx, yy, Z = model_2D_meshgrid(**meshgrid_args)
-    shw = ax.imshow(Z, extent=(xx.min(), xx.max(), yy.min(), yy.max()),
+    # Apply gaussian filter
+    Z_filt = ndimage.filters.gaussian_filter(Z, [1,1], mode='reflect')
+    shw = ax.imshow(Z_filt, extent=(xx.min(), xx.max(), yy.min(), yy.max()),
                    **plotting_args)
     ax.set_xlabel(meshgrid_args['str_feature1'],size=12)
     ax.set_ylabel(meshgrid_args['str_feature2'],size=12)
@@ -170,13 +174,15 @@ def plot_meshgrid(meshgrid_args, plotting_args):
     #colorbar
     bar = fig.colorbar(shw)
     bar.set_label('Max Gas Rate/FT Lateral') 
+    plt.savefig(fname='{}_heatmap.png'.format(str_feature3), dpi=dpi)
 # %%
     #Heatmap 1 thrid dimension is from max_features
 dict_plotting_args1 = {'cmap':plt.cm.magma,'vmin':0,'vmax':175,'aspect':'auto',
-                     'origin':'lower'}
+                     'origin':'lower', 'dpi':150}
 
 dict_plotting_args2 = {'cmap':plt.cm.magma_r,'vmin':3,'vmax':7,'aspect':'auto',
-                     'origin':'lower'}
+                     'origin':'lower', 'dpi':150}
+
 plot_meshgrid(dict_kwargs1, dict_plotting_args2)
 
 
@@ -231,3 +237,10 @@ dict_plotting_args = {'cmap':plt.cm.magma_r,'vmin':3,'vmax':7,'aspect':'auto',
                      'origin':'lower'}
 
 plot_meshgrid_cost(dict_kwargs1, dict_plotting_args)
+# %%
+# %% filter Z
+sigma_y = 1.0
+sigma_x = 1.0
+# Apply gaussian filter
+sigma = [sigma_y, sigma_x]
+Z_filt = sp.ndimage.filters.gaussian_filter(Pmean, sigma, mode='reflect')
