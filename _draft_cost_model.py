@@ -102,32 +102,56 @@ def model_3D_meshgrid(trained_model, X, y, feature1, feature2, feature3, nsteps,
     if bool_mode_cost == True:
         Z = cost_model(df_meshgrid, y_hat, dict_cost_params)
         index = np.argmin(Z)
-        optimized_vals = df_meshgrid.iloc[index,:]
+        optimized_val = Z[index]
+        optimized_attributes = df_meshgrid.iloc[index,:]
     else:
         index = np.argmax(y_hat)
-        optimized_vals = df_meshgrid.iloc[index,:]
+        optimized_val = y_hat[index]
+        optimized_attributes = df_meshgrid.iloc[index,:]
     
-    return optimized_vals
+    return optimized_attributes, optimized_val
 # %%
 #ensures features are in the same order as the model input (X_train)
 dict_features = {key:key_str for key, key_str in zip(
     ['feature1', 'feature2', 'feature3'],X_train.columns)}
 
-dict_args = {'trained_model':model_gbm,'X':X_train,'y':y_train,'nsteps':50,'bool_mode_cost':True}
+dict_args = {'trained_model':model_gbm,'X':X_train,'y':y_train,'nsteps':50,'bool_mode_cost':False}
 dict_args.update(dict_features)
 
-max_features = np.round(model_3D_meshgrid(**dict_args),1)
+optimized_attributes, optimized_val = [np.round(x,1) for x in model_3D_meshgrid(**dict_args)]
+# %% def grid prediction
+def grid_stats(xmax, xmin, ymax, ymin, zmax, zmin, nsteps):
+    #delta_grid
+    grid_d = 3
+    grid_x = np.array([grid_d, -grid_d, 0, 0, 0, 0])
+    grid_y = np.roll(grid_x, 2)
+    grid_z = np.roll(grid_y, 4)
+    dx = (xmax-xmin)/(nsteps-1)
+    dy = (ymax-ymin)/(nsteps-1)
+    dz = (zmax-zmin)/(nsteps-1)
+    list_vals=[[ser_vals3[str_feature1], ser_vals3[str_feature2], ser_vals3[str_feature3] ]]
+    for x, y, z in zip(grid_x, grid_y, grid_z):
+        list_vals.append([dx*x+ser_vals3[str_feature1], dy*y+ser_vals3[str_feature2], dz*z+ser_vals3[str_feature3]])
+    
+    df_grid = pd.DataFrame(list_vals, columns=[str_feature1, str_feature2, str_feature3])
+    df_grid = df_grid[X.columns]
+    y_hat = trained_model.predict(df_grid)
+    dict_y_hat ={'mean':np.round(np.mean(y_hat),1),'P10':np.round(np.quantile(y_hat,.1),1),
+                 'P90':np.round(np.quantile(y_hat,.9),1)}
+    return dict_y_hat
 # %%
 # this function calculates the meshgrid of predictions for the heatmap
 #inputs are the features to be cross plotted
 #output are the xx, yy, Z meshgrid values
 
 def model_2D_meshgrid(trained_model, X, y, str_feature1, str_feature2, str_feature3, ser_vals3, nsteps, bool_mode_cost):
-    # feature 1 and 2 ranges
+    # feature ranges
     xmin=X_train[str_feature1].min()
     xmax=X_train[str_feature1].max()
     ymin=X_train[str_feature2].min()
     ymax=X_train[str_feature2].max()
+    zmin=X_train[str_feature3].min()
+    zmax=X_train[str_feature3].max()
     # meshgrid of feature1 and feature2
     xx, yy = np.meshgrid(np.linspace(xmin,xmax,nsteps), np.linspace(ymin, ymax, nsteps))
     #thrid dimension is all constant values
@@ -136,54 +160,94 @@ def model_2D_meshgrid(trained_model, X, y, str_feature1, str_feature2, str_featu
     #order dictionary in same as Xtrain
     dict_meshgrid = {xcol:dict_arrays[xcol] for xcol in X.columns}
     df_meshgrid = pd.DataFrame(dict_meshgrid)
-    # predict
-    y_hat = trained_model.predict(df_meshgrid)
+    
+    #delta_grid
+    grid_d = 3
+    grid_x = np.array([grid_d, -grid_d, 0, 0, 0, 0])
+    grid_y = np.roll(grid_x, 2)
+    grid_z = np.roll(grid_y, 4)
+    dx = (xmax-xmin)/(nsteps-1)
+    dy = (ymax-ymin)/(nsteps-1)
+    dz = (zmax-zmin)/(nsteps-1)
+    list_vals=[[ser_vals3[str_feature1], ser_vals3[str_feature2], ser_vals3[str_feature3] ]]
+    for x, y, z in zip(grid_x, grid_y, grid_z):
+        list_vals.append([dx*x+ser_vals3[str_feature1], dy*y+ser_vals3[str_feature2], dz*z+ser_vals3[str_feature3]])
+    
+    df_grid = pd.DataFrame(list_vals, columns=[str_feature1, str_feature2, str_feature3])
+    df_grid = df_grid[X.columns]
+    
+    # infer on meshgrid
+    y_hat_meshgrid = trained_model.predict(df_meshgrid)
+    #infer on stencil around a given point
+    y_hat_grid = trained_model.predict(df_grid)
     if bool_mode_cost == True:
-        Z = cost_model(df_meshgrid, y_hat, dict_cost_params).reshape(xx.shape)
+        Z = cost_model(df_meshgrid, y_hat_meshgrid, dict_cost_params).reshape(xx.shape)
+        y_hat_grid = cost_model(df_grid, y_hat_grid, dict_cost_params)
     else:
-        Z = y_hat.reshape(xx.shape)
-    return xx, yy, Z
+        Z = y_hat_meshgrid.reshape(xx.shape)
+        y_hat_grid = y_hat_grid
+    
+    dict_y_hat ={'mean':np.round(np.mean(y_hat_grid),1),'P10':np.round(np.quantile(y_hat_grid,.1),1),
+                  'P90':np.round(np.quantile(y_hat_grid,.9),1)}
+    
+    return xx, yy, Z, dict_y_hat
 # %%
 #These dictionaries define the inputs for the "heatmaps"
 #heatmap 1
 dict_kwargs1 = {'trained_model':model_gbm,'X':X_train,'y':y_train,
                'str_feature1':'Proppant_per_Ft','str_feature2':'Fluid_per_Ft','str_feature3':'Lat_length',
-               'ser_vals3':max_features,'nsteps':50,'bool_mode_cost':False}
+               'ser_vals3':optimized_attributes,'nsteps':50,'bool_mode_cost':False}
 #heatmap 2
 dict_kwargs2 = {'trained_model':model_gbm,'X':X_train,'y':y_train,
                'str_feature1':'Lat_length','str_feature2':'Fluid_per_Ft','str_feature3':'Proppant_per_Ft',
-               'ser_vals3':max_features,'nsteps':50,'bool_mode_cost':False}
+               'ser_vals3':optimized_attributes,'nsteps':50,'bool_mode_cost':False}
 #heatmap 3
 dict_kwargs3 = {'trained_model':model_gbm,'X':X_train,'y':y_train,
                'str_feature1':'Lat_length','str_feature2':'Proppant_per_Ft','str_feature3':'Fluid_per_Ft',
-               'ser_vals3':max_features,'nsteps':50,'bool_mode_cost':False}
+               'ser_vals3':optimized_attributes,'nsteps':50,'bool_mode_cost':False}
+# %% test block
+xx, yy, Z, dict_y_hat = model_2D_meshgrid(**dict_kwargs1)
 # %%
 #function to generate plots
 def plot_meshgrid(meshgrid_args, plotting_args):
     fig, ax = plt.subplots(nrows=1, ncols=1, constrained_layout=True)
-    xx, yy, Z = model_2D_meshgrid(**meshgrid_args)
-    # Apply gaussian filter
+    #heat map grid points
+    xx, yy, Z, dict_y_hat = model_2D_meshgrid(**meshgrid_args)
+    # Apply gaussian filter for smoother heatmap
     Z_filt = ndimage.filters.gaussian_filter(Z, [1,1], mode='reflect')
+    # plot marker at max value
+    val_x = meshgrid_args['ser_vals3'][meshgrid_args['str_feature1']]
+    val_y = meshgrid_args['ser_vals3'][meshgrid_args['str_feature2']]
+    val_z = meshgrid_args['ser_vals3'][meshgrid_args['str_feature3']]
+    #Plot heatmap
     shw = ax.imshow(Z_filt, extent=(xx.min(), xx.max(), yy.min(), yy.max()),
                    **plotting_args)
+    #plot marker
+    mrker = ax.plot(val_x, val_y, '+', markeredgecolor='darkslategray', markeredgewidth=3, ms=16)
+    #plot text
+    txt = ax.annotate('    P90 {}\n    Mean {}\n    P10 {}'.format(dict_y_hat['P90'],dict_y_hat['mean'],dict_y_hat['P10']),
+                      xy=(val_x, val_y), xycoords='data', xytext=(val_x,val_y), va='center', weight='bold', color='darkslategray')
+            #xy=(x1, y1), xycoords='data',
+            #xytext=(x2, y2), textcoords='offset points',
+    #txt = ax.text(val_x, val_y, 'Value = {}'.format(y_hat_point),ha="center", va="top", weight='bold')
+    #Plot annotations
     ax.set_xlabel(meshgrid_args['str_feature1'],size=12)
     ax.set_ylabel(meshgrid_args['str_feature2'],size=12)
-    val3 = meshgrid_args['ser_vals3'][meshgrid_args['str_feature3']]
-    ax.set_title('{} = {}'.format(meshgrid_args['str_feature3'],val3),
+    ax.set_title('{} = {}'.format(meshgrid_args['str_feature3'],val_z),
                 pad=10, size=16, weight='bold')
     #colorbar
     bar = fig.colorbar(shw)
     bar.set_label('Max Gas Rate/FT Lateral') 
-    plt.savefig(fname='{}_heatmap.png'.format(str_feature3), dpi=dpi)
+    plt.savefig(fname='{}_heatmap.png'.format(meshgrid_args['str_feature3']), format='png', dpi=150)
 # %%
     #Heatmap 1 thrid dimension is from max_features
 dict_plotting_args1 = {'cmap':plt.cm.magma,'vmin':0,'vmax':175,'aspect':'auto',
-                     'origin':'lower', 'dpi':150}
+                     'origin':'lower'}
 
 dict_plotting_args2 = {'cmap':plt.cm.magma_r,'vmin':3,'vmax':7,'aspect':'auto',
-                     'origin':'lower', 'dpi':150}
+                     'origin':'lower'}
 
-plot_meshgrid(dict_kwargs1, dict_plotting_args2)
+plot_meshgrid(dict_kwargs1, dict_plotting_args1)
 
 
 # %%
