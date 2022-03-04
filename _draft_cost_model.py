@@ -119,26 +119,7 @@ dict_args = {'trained_model':model_gbm,'X':X_train,'y':y_train,'nsteps':50,'bool
 dict_args.update(dict_features)
 
 optimized_attributes, optimized_val = [np.round(x,1) for x in model_3D_meshgrid(**dict_args)]
-# %% def grid prediction
-def grid_stats(xmax, xmin, ymax, ymin, zmax, zmin, nsteps):
-    #delta_grid
-    grid_d = 3
-    grid_x = np.array([grid_d, -grid_d, 0, 0, 0, 0])
-    grid_y = np.roll(grid_x, 2)
-    grid_z = np.roll(grid_y, 4)
-    dx = (xmax-xmin)/(nsteps-1)
-    dy = (ymax-ymin)/(nsteps-1)
-    dz = (zmax-zmin)/(nsteps-1)
-    list_vals=[[ser_vals3[str_feature1], ser_vals3[str_feature2], ser_vals3[str_feature3] ]]
-    for x, y, z in zip(grid_x, grid_y, grid_z):
-        list_vals.append([dx*x+ser_vals3[str_feature1], dy*y+ser_vals3[str_feature2], dz*z+ser_vals3[str_feature3]])
-    
-    df_grid = pd.DataFrame(list_vals, columns=[str_feature1, str_feature2, str_feature3])
-    df_grid = df_grid[X.columns]
-    y_hat = trained_model.predict(df_grid)
-    dict_y_hat ={'mean':np.round(np.mean(y_hat),1),'P10':np.round(np.quantile(y_hat,.1),1),
-                 'P90':np.round(np.quantile(y_hat,.9),1)}
-    return dict_y_hat
+
 # %%
 # this function calculates the meshgrid of predictions for the heatmap
 #inputs are the features to be cross plotted
